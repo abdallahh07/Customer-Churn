@@ -1,0 +1,5 @@
+data/
+notebooks/
+.git/
+__pycache__/
+*.ipynb

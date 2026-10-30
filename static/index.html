@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer Churn Predictor</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
+          --accent:#6366f1; --red:#ef4444; --green:#22c55e; --border:#334155; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:system-ui,-apple-system,sans-serif; background:var(--bg);
+         color:var(--text); min-height:100vh; padding:40px 16px; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:28px; margin-bottom:6px; }
+  .sub { color:var(--muted); margin-bottom:28px; }
+  .grid { display:grid; grid-template-columns:1.4fr 1fr; gap:20px; }
+  @media (max-width:760px){ .grid{ grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--border);
+          border-radius:14px; padding:24px; }
+  .card h2 { font-size:16px; margin-bottom:16px; color:var(--muted);
+             text-transform:uppercase; letter-spacing:.05em; }
+  .fields { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  label { display:block; font-size:13px; margin-bottom:5px; }
+  label span { color:var(--muted); font-size:11px; display:block; }
+  input { width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+          background:var(--bg); color:var(--text); font-size:15px; }
+  input:focus { outline:2px solid var(--accent); border-color:transparent; }
+  .presets { display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap; }
+  .chip { padding:6px 12px; border-radius:999px; border:1px solid var(--border);
+          background:transparent; color:var(--text); cursor:pointer; font-size:13px; }
+  .chip:hover { border-color:var(--accent); }
+  .btn { width:100%; margin-top:20px; padding:13px; border:none; border-radius:10px;
+         background:var(--accent); color:white; font-size:16px; font-weight:600; cursor:pointer; }
+  .btn:hover { filter:brightness(1.1); }
+  .result { text-align:center; }
+  .placeholder { color:var(--muted); padding:60px 0; }
+  .pct { font-size:64px; font-weight:700; margin:10px 0 4px; }
+  .pill { display:inline-block; padding:6px 16px; border-radius:999px;
+          font-weight:600; margin:8px 0 18px; }
+  .bar { height:12px; background:var(--bg); border-radius:999px; overflow:hidden; }
+  .fill { height:100%; border-radius:999px; transition:width .5s; }
+  .note { color:var(--muted); font-size:13px; margin-top:16px; line-height:1.5; }
+  .err { color:var(--red); margin-top:12px; font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Customer Churn Predictor</h1>
+  <p class="sub">Predict whether a customer will buy again in the next 90 days. Gradient Boosting · ROC-AUC 0.82</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Customer profile</h2>
+      <div class="presets">
+        <button class="chip" onclick="preset('risk')">At-risk example</button>
+        <button class="chip" onclick="preset('loyal')">Loyal example</button>
+      </div>
+      <div class="fields" id="fields"></div>
+      <button class="btn" onclick="predict()">Predict churn</button>
+      <div class="err" id="err"></div>
+    </div>
+
+    <div class="card result" id="result">
+      <h2>Prediction</h2>
+      <div class="placeholder">Fill in a customer profile and click <b>Predict churn</b>.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const FIELDS = [
+  ["recency", "Recency", "days since last purchase"],
+  ["tenure", "Tenure", "days since first purchase"],
+  ["frequency", "Frequency", "number of orders"],
+  ["monetary", "Monetary", "total spend (£)"],
+  ["avg_order_value", "Avg order value", "£ per order"],
+  ["recent_orders", "Recent orders", "orders in last 90 days"],
+  ["return_rate", "Return rate", "share of cancelled orders (0–1)"],
+  ["unique_products", "Unique products", "different items bought"],
+  ["avg_days_between", "Avg days between orders", "buying rhythm"],
+];
+const INTS = ["recency","tenure","frequency","recent_orders","unique_products"];
+
+const PRESETS = {
+  risk:  {recency:200, tenure:400, frequency:2, monetary:300, avg_order_value:150,
+          recent_orders:0, return_rate:0, unique_products:10, avg_days_between:100},
+  loyal: {recency:5, tenure:600, frequency:30, monetary:9000, avg_order_value:300,
+          recent_orders:6, return_rate:0.05, unique_products:150, avg_days_between:20},
+};
+
+document.getElementById("fields").innerHTML = FIELDS.map(([k, name, hint]) =>
+  `<div><label for="${k}">${name}<span>${hint}</span></label>
+   <input id="${k}" type="number" step="any"></div>`).join("");
+
+function preset(name) {
+  for (const [k, v] of Object.entries(PRESETS[name])) document.getElementById(k).value = v;
+}
+preset("risk");
+
+async function predict() {
+  const err = document.getElementById("err");
+  err.textContent = "";
+  const body = {};
+  for (const [k] of FIELDS) {
+    const v = document.getElementById(k).value;
+    if (v === "") { err.textContent = "Please fill in every field."; return; }
+    body[k] = INTS.includes(k) ? parseInt(v) : parseFloat(v);
+  }
+  try {
+    const res = await fetch("/predict", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    show(await res.json());
+  } catch (e) {
+    err.textContent = "Prediction failed: " + e.message;
+  }
+}
+
+function show(r) {
+  const pct = Math.round(r.churn_probability * 100);
+  const churn = r.label === "churned";
+  const color = churn ? "var(--red)" : "var(--green)";
+  document.getElementById("result").innerHTML = `
+    <h2>Prediction</h2>
+    <div class="pct" style="color:${color}">${pct}%</div>
+    <div style="color:var(--muted)">probability of churn</div>
+    <div class="pill" style="background:${color}22;color:${color}">
+      ${churn ? "Likely to churn" : "Likely to return"}</div>
+    <div class="bar"><div class="fill" style="width:${pct}%;background:${color}"></div></div>
+    <p class="note">${churn
+      ? "This customer shows signs of disengagement. Consider a retention offer."
+      : "This customer looks engaged. No action needed."}</p>`;
+}
+</script>
+</body>
+</html>
